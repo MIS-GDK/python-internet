@@ -111,7 +111,7 @@ class TextField(Field):
 class ModelMetaclass(type):
     def __new__(cls, name, bases, attrs):
         if name == 'Model':
-            return type.__new__(cls, name, bases, atts)
+            return type.__new__(cls, name, bases, attrs)
         tableName = attrs.get('__table__', None) or name
 
         logging.info('found model: %s (table: %s)' % (name, tableName))
@@ -135,7 +135,7 @@ class ModelMetaclass(type):
         if not primaryKey:
             raise StandardError('Primary key not found.')
 
-        for k in mappings.key():
+        for k in mappings.keys():
             attrs.pop(k)
 
         escaped_fields = list(map(lambda f: '`%s`' % f, fields))
@@ -251,3 +251,4 @@ class Model(dict, metaclass=ModelMetaclass):
         if rows != 1:
             logging.warn(
                 'failed to remove by primary key: affected rows: %s' % rows)
+ 

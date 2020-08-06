@@ -14,7 +14,7 @@ async def gdk_test(loop):
     )
 
     u = User(
-        name="Test", email="test4@example.com", passwd="1234567890", image="about:blank"
+        name="Test", email="test5@example.com", passwd="1234567890", image="about:blank"
     )
     await u.save()
 

@@ -112,47 +112,46 @@ class RequestHandler(object):
         self._has_var_kw_arg = has_var_kw_args(fn)
         self._has_request_arg = has_request_arg(fn)
 
-
-# __call__这里要构造协程
-async def __call__(self, request):
-    kw = None
-    if self._has_var_kw_arg or self._has_named_kw_arg or self._required_kw_args:
-        # 判断客户端发来的方法是否为POST
-        if request.metmod == "POST":
-            # 查询有没提交数据的格式（EncType）
-            if not request.content_type:
-                return web.HTTPBadRequest(text="Missing Content_Type.")
-            ct = request.content_type.lower()
-            if ct.startswith("application/json"):
-                # Read request body decoded as json.
-                params = await request.json()
-                if not isinstance(params, dict):
-                    return web.HTTPBadRequest(text="JSON body must be object.")
-                kw = params
-            elif ct.startswith("application/x-www-form-urlencoded") or ct.startswith(
-                "multipart/form-data"
-            ):
-                # reads POST parameters from request body.
-                # If method is not POST, PUT, PATCH, TRACE or DELETE
-                # or content_type is not empty
-                # or application/x-www-form-urlencoded
-                # or multipart/form-data returns empty multidict.
-                params = await request.post()
-                kw = dict(**params)
-            else:
-                return web.HTTPBadRequest(
-                    text="Unsupported Content_Tpye: %s" % (request.content_type)
-                )
-        if request.method == "GET":
-            # The query string in the URL
-            qs = request.query_string
-            if qs:
-                # Parse a query string given as a string argument.
-                # Data are returned as a dictionary.
-                # The dictionary keys are the unique query variable names and the values are lists of values for each name.
-                kw = dict()
-                for k, v in parse.parse_qs(qs, True).items():
-                    kw[k] = v[0]
-    if kw is None:
-        kw = dict(**request.match_info)
+    # __call__这里要构造协程
+    async def __call__(self, request):
+        kw = None
+        if self._has_var_kw_arg or self._has_named_kw_arg or self._required_kw_args:
+            # 判断客户端发来的方法是否为POST
+            if request.metmod == "POST":
+                # 查询有没提交数据的格式（EncType）
+                if not request.content_type:
+                    return web.HTTPBadRequest(text="Missing Content_Type.")
+                ct = request.content_type.lower()
+                if ct.startswith("application/json"):
+                    # Read request body decoded as json.
+                    params = await request.json()
+                    if not isinstance(params, dict):
+                        return web.HTTPBadRequest(text="JSON body must be object.")
+                    kw = params
+                elif ct.startswith(
+                    "application/x-www-form-urlencoded"
+                ) or ct.startswith("multipart/form-data"):
+                    # reads POST parameters from request body.
+                    # If method is not POST, PUT, PATCH, TRACE or DELETE
+                    # or content_type is not empty
+                    # or application/x-www-form-urlencoded
+                    # or multipart/form-data returns empty multidict.
+                    params = await request.post()
+                    kw = dict(**params)
+                else:
+                    return web.HTTPBadRequest(
+                        text="Unsupported Content_Tpye: %s" % (request.content_type)
+                    )
+            if request.method == "GET":
+                # The query string in the URL
+                qs = request.query_string
+                if qs:
+                    # Parse a query string given as a string argument.
+                    # Data are returned as a dictionary.
+                    # The dictionary keys are the unique query variable names and the values are lists of values for each name.
+                    kw = dict()
+                    for k, v in parse.parse_qs(qs, True).items():
+                        kw[k] = v[0]
+        if kw is None:
+            kw = dict(**request.match_info)
 

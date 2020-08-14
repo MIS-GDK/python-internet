@@ -40,12 +40,30 @@ def post(path):
     return decoator
 
 
+# 使用inspect模块，检查视图函数的参数
+
+# inspect.Parameter.kind 类型：
+# POSITIONAL_ONLY          位置参数
+# KEYWORD_ONLY             命名关键词参数
+# VAR_POSITIONAL           可选参数 *args
+# VAR_KEYWORD              关键词参数 **kw
+# POSITIONAL_OR_KEYWORD    位置或必选参数
+
 # 运用inspect模块，创建几个函数用以获取URL处理函数与request参数之间的关系
 # 收集没有默认值的命名关键字参数
 def get_required_kw_args(fn):
     args = []
+    """ 
+    def foo(a, b = 10, *c, d,**kw): pass 
+    sig = inspect.signature(foo) ==> <Signature (a, b=10, *c, d, **kw)> 
+    sig.parameters ==>  mappingproxy(OrderedDict([('a', <Parameter "a">), ...])) 
+    sig.parameters.items() ==> odict_items([('a', <Parameter "a">), ...)]) 
+    sig.parameters.values() ==>  odict_values([<Parameter "a">, ...]) 
+    sig.parameters.keys() ==>  odict_keys(['a', 'b', 'c', 'd', 'kw']) 
+    """
     params = inspect.signature(fn).parameters  # inspect模块是用来分析模块，函数
     for name, param in params.items():
+        # 如果视图函数存在命名关键字参数，且默认值为空，获取它的key（参数名）
         if (
             param.kind == inspect.Parameter.KEYWORD_ONLY
             and param.default == inspect.Parameter.empty
@@ -58,7 +76,7 @@ def get_required_kw_args(fn):
 def get_named_kw_args(fn):
     args = []
     params = inspect.signature(fn).parameters
-    for name, param in params:
+    for name, param in params.items():
         if param.kind == inspect.Parameter.KEYWORD_ONLY:
             args.append(name)
     return tuple(args)
@@ -67,7 +85,7 @@ def get_named_kw_args(fn):
 # 判断有没有命名关键字参数
 def has_named_kw_args(fn):
     params = inspect.signature(fn).parameters
-    for name, param in params:
+    for name, param in params.items():
         if param.kind == inspect.Parameter.KEYWORD_ONLY:
             return True
 
@@ -75,7 +93,7 @@ def has_named_kw_args(fn):
 # 判断有没有关键字参数
 def has_var_kw_args(fn):
     params = inspect.signature(fn).parameters
-    for name, param in params:
+    for name, param in params.items():
         if param.kind == inspect.Parameter.VAR_KEYWORD:
             return True
 
@@ -85,7 +103,7 @@ def has_request_arg(fn):
     sig = inspect.signature(fn)
     params = sig.parameters
     found = False
-    for name, param in params:
+    for name, param in params.items():
         if name == "request":
             found = True
             continue
@@ -94,10 +112,12 @@ def has_request_arg(fn):
             and param.kind != inspect.Parameter.KEYWORD_ONLY
             and param.kind != inspect.Parameter.VAR_KEYWORD
         ):
+            # 若判断为True，表明param只能是位置参数。且该参数位于request之后，故不满足条件，报错。
             raise ValueError(
                 "request parameter must be the last named parameter in function: %s%s"
                 % (fn.__name__, str(sig))
             )
+    return found
 
 
 # 定义RequestHandler,正式向request参数获取URL处理函数所需的参数
@@ -113,12 +133,18 @@ class RequestHandler(object):
         self._has_request_arg = has_request_arg(fn)
 
     # __call__这里要构造协程
+    # 1.定义kw，用于保存参数
+    # 2.判断视图函数是否存在关键词参数，如果存在根据POST或者GET方法将request请求内容保存到kw
+    # 3.如果kw为空（说明request无请求内容），则将match_info列表里的资源映射给kw；若不为空，把命名关键词参数内容给kw
+    # 4.完善_has_request_arg和_required_kw_args属性
     async def __call__(self, request):
+        # 定义kw，用于保存request中参数
         kw = None
+        # 若视图函数有命名关键词或关键词参数
         if self._has_var_kw_arg or self._has_named_kw_arg or self._required_kw_args:
             # 判断客户端发来的方法是否为POST
             if request.metmod == "POST":
-                # 查询有没提交数据的格式（EncType）
+                # 查询有无提交数据的格式（EncType）
                 if not request.content_type:
                     return web.HTTPBadRequest(text="Missing Content_Type.")
                 ct = request.content_type.lower()
@@ -136,7 +162,10 @@ class RequestHandler(object):
                     # or content_type is not empty
                     # or application/x-www-form-urlencoded
                     # or multipart/form-data returns empty multidict.
+
+                    # 返回post的内容中解析后的数据。dict-like对象。
                     params = await request.post()
+                    # 组成dict，统一kw格式
                     kw = dict(**params)
                 else:
                     return web.HTTPBadRequest(

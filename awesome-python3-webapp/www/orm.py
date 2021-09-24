@@ -29,9 +29,12 @@ async def create_pool(loop, **kw):
 async def select(sql, args, size=None):
     log(sql)
     global __pool
+    # 异步等待连接池对象返回可以连接线程，with语句则封装了清理（关闭conn）和处理异常的工作
     async with __pool.get() as conn:
+        # 等待连接对象返回DictCursor可以通过dict的方式获取数据库对象，需要通过游标对象执行SQL
         async with conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute(sql.replace("?", "%s"), args or ())
+            # 将sql中的'?'替换为'%s'，因为mysql语句中的占位符为%s
+            await cur.execute(sql.replace("?", "%s"), args)
             if size:
                 rs = await cur.fetchmany(size)
             else:
@@ -44,15 +47,19 @@ async def select(sql, args, size=None):
 async def execute(sql, args, autocommit=True):
     log(sql)
     async with __pool.get() as conn:
+        # 若设置不是自动提交，则手动开启事务
         if not autocommit:
             await conn.begin()
         try:
+            # 打开一个DictCursor，它与普通游标的不同在于，以dict形式返回结果
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(sql.replace("?", "%s"), args)
                 affected = cur.rowcount
+            # 同上, 如果设置不是自动提交的话，手动提交事务
             if not autocommit:
                 await conn.commit
         except BaseException as e:
+            # 出错, 回滚事务到增删改之前
             if not autocommit:
                 await conn.rollback()
             raise
@@ -101,7 +108,7 @@ class TextField(Field):
     def __init__(self, name=None, default=None):
         super().__init__(name, "text", False, default)
 
-
+# metaclass是类的模板，所以必须从`type`类型派生：
 class ModelMetaclass(type):
     def __new__(cls, name, bases, attrs):
         if name == "Model":
@@ -251,4 +258,3 @@ class Model(dict, metaclass=ModelMetaclass):
         rows = await execute(self.__delete__, args)
         if rows != 1:
             logging.warn("failed to remove by primary key: affected rows: %s" % rows)
-

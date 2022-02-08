@@ -127,6 +127,7 @@ def datetime_filter(t):
 
 
 async def init(loop):
+    # 1：创建数据库连接池；
     await orm.create_pool(
         loop,
         user="www-data",
@@ -135,10 +136,15 @@ async def init(loop):
         host="192.168.0.190",
         port=3306,
     )
+    # 2：创建Web Application对象
     app = web.Application(loop=loop, middlewares=[logger_factory, response_factory])
+    # 3：后期使用的模板框架；
     init_jinja2(app, filters=dict(datetime=datetime_filter))
+    # 4：添加handlers模块中的URL处理函数到Web Application的router中；
     add_routes(app, "handlers")
+    # 5：添加css等静态文件；
     add_static(app)
+    # 6：创建服务器接受处理请求；
     srv = await loop.create_server(app.make_handler(), "127.0.0.1", 9000)
     logging.info("server started at http://127.0.0.1:9000...")
     return srv

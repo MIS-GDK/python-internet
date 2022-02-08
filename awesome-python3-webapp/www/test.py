@@ -22,10 +22,6 @@ async def gdk_test(loop):
     await u.save()
 
 
-def add(x):
-    return x + x
-
-
 # 要运行协程，需要使用事件循环
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()

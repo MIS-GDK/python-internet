@@ -1,5 +1,7 @@
 __author__ = "MIS_GDK"
-
+"""
+对象关系映射：通俗说就是将一个数据库表映射为一个类
+"""
 import asyncio
 import logging
 import aiomysql
@@ -9,10 +11,13 @@ def log(sql, args=()):
     logging.info("SQL:%s" % sql)
 
 
+# 异步协程：创建数据库连接池
 async def create_pool(loop, **kw):
     logging.info("create database connection pool")
+    # 全局私有变量，内部可以访问
     global __pool
     __pool = await aiomysql.create_pool(
+        # kw.get(key,default)：通过key在kw中查找对应的value，如果没有则返回默认值default
         host=kw.get("host", "localhost"),
         port=kw.get("port", 3306),
         user=kw["user"],
@@ -26,12 +31,21 @@ async def create_pool(loop, **kw):
     )
 
 
+# 协程：销毁所有的数据库连接池
+async def destory_pool():
+    global __pool
+    if __pool is not None:
+        __pool.close()
+        await __pool.wait_closed()
+
+
+# 协程：面向sql的查询操作:size指定返回的查询结果数
 async def select(sql, args, size=None):
     log(sql)
     global __pool
     # 异步等待连接池对象返回可以连接线程，with语句则封装了清理（关闭conn）和处理异常的工作
     async with __pool.get() as conn:
-        # 等待连接对象返回DictCursor可以通过dict的方式获取数据库对象，需要通过游标对象执行SQL
+        # 查询需要返回查询的结果，按照dict返回，所以游标cursor中传入了参数aiomysql.DictCursor
         async with conn.cursor(aiomysql.DictCursor) as cur:
             # 将sql中的'?'替换为'%s'，因为mysql语句中的占位符为%s
             await cur.execute(sql.replace("?", "%s"), args)
@@ -44,6 +58,9 @@ async def select(sql, args, size=None):
         return rs
 
 
+# 将面向mysql的增insert、删delete、改update封装成一个协程
+# 语句操作参数一样，直接封装成一个通用的执行函数
+# 返回受影响的行数
 async def execute(sql, args, autocommit=True):
     log(sql)
     async with __pool.get() as conn:
@@ -66,6 +83,8 @@ async def execute(sql, args, autocommit=True):
         return affected
 
 
+# 查询字段计数：替换成sql识别的'？'
+# 根据输入的字段生成占位符列表
 def create_args_string(num):
     L = []
     for n in range(num):
@@ -73,17 +92,22 @@ def create_args_string(num):
     return ",".join(L)
 
 
+# 定义Field类，保存数据库中表的字段名和字段类型
 class Field(object):
+    # 表的字段包括：名字、类型、是否为主键、默认值
     def __init__(self, name, column_type, primary_key, default):
         self.name = name
         self.column_type = column_type
         self.primary_key = primary_key
         self.default = default
 
+    # 打印数据库中的表时，输出表的信息：类名、字段名、字段类型
     def __str__(self):
         return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
 
 
+# 定义不同类型的衍生Field
+# 表的不同列的字段的类型不同
 class StringField(Field):
     def __init__(self, name=None, primary_key=False, default=None, ddl="varchar(100)"):
         super().__init__(name, ddl, primary_key, default)
@@ -108,8 +132,23 @@ class TextField(Field):
     def __init__(self, name=None, default=None):
         super().__init__(name, "text", False, default)
 
+
 # metaclass是类的模板，所以必须从`type`类型派生：
+# 定义Model的metaclass元类
+# 所有的元类都继承自type
+# ModelMetaclass元类定义了所有Model基类（继承ModelMetaclass）的子类实现的操作
+
+# -*-ModelMetaclass：为一个数据库表映射成一个封装的类做准备
+# 读取具体子类(eg：user)的映射信息
+# 创造类的时候，排除对Model类的修改
+# 在当前类中查找所有的类属性(attrs),如果找到Field属性，就保存在__mappings__的dict里，
+# 同时从类属性中删除Field（防止实例属性覆盖类的同名属性）
+# __table__保存数据库表名
 class ModelMetaclass(type):
+    # __new__控制__init__的执行，所以在其执行之前
+    # cls：代表要__init__的类，此参数在实例化时由python解释器自动提供（eg：下文的User、Model)
+    # bases:代表继承父类的集合
+    # attrs:类的方法集合
     def __new__(cls, name, bases, attrs):
         if name == "Model":
             return type.__new__(cls, name, bases, attrs)

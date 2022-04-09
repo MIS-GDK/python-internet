@@ -148,6 +148,7 @@ class ModelMetaclass(type):
     # __new__控制__init__的执行，所以在其执行之前
     # cls：代表要__init__的类，此参数在实例化时由python解释器自动提供（eg：下文的User、Model)
     # bases:代表继承父类的集合
+    # name:要创建的类的名字
     # attrs:类的方法集合
     def __new__(cls, name, bases, attrs):
         if name == "Model":
